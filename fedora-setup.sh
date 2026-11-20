@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
 # =============================================================================
 #  fedora-setup.sh — Entorno de desarrollo + configuración visual para Fedora
-#  Generado el 2026-11-05 desde Fedora Linux 44 (Workstation Edition), GNOME Shell 50.6
+#  Generado el 2026-11-20 desde Fedora Linux 45 (KDE Plasma Desktop Edition), plasmashell 6.8.2, GNOME Shell 51.1
 #
-#  Incluye: apps de desarrollo, kitty, zsh/oh-my-zsh/p10k/starship,
-#           extensiones y apariencia de GNOME, VS Code.
+#  Incluye: apps de desarrollo, kitty, zsh/oh-my-zsh/p10k/starship, VS Code,
+#           LaTeX (TeX Live medium), apariencia de KDE Plasma (temas,
+#           widgets, paneles, atajos) y de GNOME (extensiones, dconf).
 #  NO incluye: identidad de git, drivers (NVIDIA/firmware), herramientas de
 #           seguridad, fondos ni archivos personales.
 #
@@ -13,16 +14,18 @@
 #    ./fedora-setup.sh --dry-run         # muestra lo que haría
 #    ./fedora-setup.sh --only dotfiles   # solo una sección
 #    ./fedora-setup.sh --skip gnome,dev
-#    ./fedora-setup.sh --with latex      # añade LaTeX completo (~5 GB)
+#    ./fedora-setup.sh --with latexfull  # añade LaTeX completo (~5 GB)
 #
-#  Secciones: system repos packages flatpak shell dotfiles dev vscode gnome
-#  Opcionales: latex
+#  Secciones: system repos packages flatpak shell dotfiles dev vscode latex kde gnome
+#  Opcionales: latexfull
+#  KDE: temas, iconos y widgets se leen de kde-assets.tar.gz (junto al script).
 #  No ejecutar como root: usa sudo cuando hace falta.
 # =============================================================================
 set -uo pipefail
 
-SECTIONS=(system repos packages flatpak shell dotfiles dev vscode gnome latex)
-OPTIONAL=",latex,"
+SECTIONS=(system repos packages flatpak shell dotfiles dev vscode latex kde gnome latexfull)
+OPTIONAL=",latexfull,"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ONLY="" SKIP="" WITH="" DRY=0
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -30,7 +33,7 @@ while [[ $# -gt 0 ]]; do
     --skip) SKIP="$2"; shift 2 ;;
     --with) WITH="$2"; shift 2 ;;
     --dry-run) DRY=1; shift ;;
-    -h|--help) sed -n '2,20p' "$0"; exit 0 ;;
+    -h|--help) sed -n '2,23p' "$0"; exit 0 ;;
     *) echo "Opción desconocida: $1"; exit 1 ;;
   esac
 done
@@ -102,7 +105,7 @@ sec_packages() {
   fi
 }
 
-FLATPAKS=( cc.arduino.arduinoide com.getpostman.Postman com.jetbrains.IntelliJ-IDEA-Ultimate io.github.shiftey.Desktop md.obsidian.Obsidian org.gaphor.Gaphor org.gnome.Extensions )
+FLATPAKS=( cc.arduino.arduinoide com.getpostman.Postman com.jetbrains.IntelliJ-IDEA-Ultimate io.github.shiftey.Desktop md.obsidian.Obsidian org.gaphor.Gaphor org.gnome.Extensions org.telegram.desktop )
 
 sec_flatpak() {
   section "Flatpak"
@@ -2146,6 +2149,955 @@ sec_vscode() {
   for e in "${VSCODE_EXTENSIONS[@]}"; do run code --install-extension "$e" --force; done
 }
 
+LATEX_PACKAGES=( texlive-scheme-medium latexmk )
+
+sec_latex() {
+  section "LaTeX (TeX Live medium + latexmk)"
+  run sudo dnf -y install --skip-unavailable "${LATEX_PACKAGES[@]}"
+}
+
+KDE_COPRS=( infinality/kwin-effects-better-blur-dx )
+KDE_PACKAGES=( kwin-effects-better-blur-dx )
+KDE_ASSETS="$SCRIPT_DIR/kde-assets.tar.gz"
+
+sec_kde() {
+  section "KDE Plasma: temas, widgets, paneles y atajos"
+  have plasmashell || { warn "KDE Plasma no detectado, se omite"; return; }
+  for c in "${KDE_COPRS[@]}"; do run sudo dnf -y copr enable "$c"; done
+  run sudo dnf -y install --skip-unavailable "${KDE_PACKAGES[@]}"
+  if [[ -f "$KDE_ASSETS" ]]; then
+    run mkdir -p "$HOME/.local/share"
+    run tar -xzf "$KDE_ASSETS" -C "$HOME/.local/share"
+  else
+    warn "No se encontró $KDE_ASSETS: temas, iconos y widgets no instalados"
+  fi
+  # plasmashell reescribe su configuración al salir: se detiene antes de escribir.
+  local restart=0
+  if (( ! DRY )) && pgrep -x plasmashell >/dev/null; then
+    kquitapp6 plasmashell >/dev/null 2>&1 || pkill -x plasmashell
+    restart=1
+  fi
+  write_file '$HOME_PLACEHOLDER/.config/kdeglobals' <<'__EOF_CFG__'
+[ColorEffects:Disabled]
+ChangeSelectionColor=
+Color=56,56,56
+ColorAmount=0
+ColorEffect=0
+ContrastAmount=0.65
+ContrastEffect=1
+Enable=
+IntensityAmount=0.1
+IntensityEffect=2
+
+[ColorEffects:Inactive]
+ChangeSelectionColor=true
+Color=112,111,110
+ColorAmount=0.025
+ColorEffect=2
+ContrastAmount=0.1
+ContrastEffect=2
+Enable=false
+IntensityAmount=0
+IntensityEffect=0
+
+[Colors:Button]
+BackgroundAlternate=55,135,177
+BackgroundNormal=41,44,48
+DecorationFocus=61,174,233
+DecorationHover=61,174,233
+ForegroundActive=61,174,233
+ForegroundInactive=161,169,177
+ForegroundLink=61,174,233
+ForegroundNegative=218,68,83
+ForegroundNeutral=246,116,0
+ForegroundNormal=252,252,252
+ForegroundPositive=39,174,96
+ForegroundVisited=155,89,182
+
+[Colors:Complementary]
+BackgroundAlternate=30,87,116
+BackgroundNormal=32,35,38
+DecorationFocus=61,174,233
+DecorationHover=61,174,233
+ForegroundActive=61,174,233
+ForegroundInactive=161,169,177
+ForegroundLink=61,174,233
+ForegroundNegative=218,68,83
+ForegroundNeutral=246,116,0
+ForegroundNormal=252,252,252
+ForegroundPositive=39,174,96
+ForegroundVisited=155,89,182
+
+[Colors:Header]
+BackgroundAlternate=32,35,38
+BackgroundNormal=41,44,48
+DecorationFocus=61,174,233
+DecorationHover=61,174,233
+ForegroundActive=61,174,233
+ForegroundInactive=161,169,177
+ForegroundLink=61,174,233
+ForegroundNegative=218,68,83
+ForegroundNeutral=246,116,0
+ForegroundNormal=252,252,252
+ForegroundPositive=39,174,96
+ForegroundVisited=155,89,182
+
+[Colors:Header][Inactive]
+BackgroundAlternate=41,44,48
+BackgroundNormal=32,35,38
+DecorationFocus=61,174,233
+DecorationHover=61,174,233
+ForegroundActive=61,174,233
+ForegroundInactive=161,169,177
+ForegroundLink=29,153,243
+ForegroundNegative=218,68,83
+ForegroundNeutral=246,116,0
+ForegroundNormal=252,252,252
+ForegroundPositive=39,174,96
+ForegroundVisited=155,89,182
+
+[Colors:Selection]
+BackgroundAlternate=48,128,170
+BackgroundNormal=48,128,170
+DecorationFocus=61,174,233
+DecorationHover=61,174,233
+ForegroundActive=61,174,233
+ForegroundInactive=0,0,0
+ForegroundLink=45,127,170
+ForegroundNegative=176,55,69
+ForegroundNeutral=198,92,0
+ForegroundNormal=0,0,0
+ForegroundPositive=23,104,57
+ForegroundVisited=155,89,182
+
+[Colors:Tooltip]
+BackgroundAlternate=32,35,38
+BackgroundNormal=41,44,48
+DecorationFocus=61,174,233
+DecorationHover=61,174,233
+ForegroundActive=61,174,233
+ForegroundInactive=161,169,177
+ForegroundLink=61,174,233
+ForegroundNegative=218,68,83
+ForegroundNeutral=246,116,0
+ForegroundNormal=252,252,252
+ForegroundPositive=39,174,96
+ForegroundVisited=155,89,182
+
+[Colors:View]
+BackgroundAlternate=29,31,34
+BackgroundNormal=20,22,24
+DecorationFocus=61,174,233
+DecorationHover=61,174,233
+ForegroundActive=61,174,233
+ForegroundInactive=161,169,177
+ForegroundLink=61,174,233
+ForegroundNegative=218,68,83
+ForegroundNeutral=246,116,0
+ForegroundNormal=252,252,252
+ForegroundPositive=39,174,96
+ForegroundVisited=155,89,182
+
+[Colors:Window]
+BackgroundAlternate=41,44,48
+BackgroundNormal=32,35,38
+DecorationFocus=61,174,233
+DecorationHover=61,174,233
+ForegroundActive=61,174,233
+ForegroundInactive=161,169,177
+ForegroundLink=61,174,233
+ForegroundNegative=218,68,83
+ForegroundNeutral=246,116,0
+ForegroundNormal=252,252,252
+ForegroundPositive=39,174,96
+ForegroundVisited=155,89,182
+
+[General]
+AccentColor=61,174,233
+BrowserApplication=google-chrome.desktop
+ColorSchemeHash=27363f5706202c1c8261fbda7381ddaab8ad48f3
+LastUsedCustomAccentColor=61,174,233
+TerminalApplication=ptyxis
+TerminalService=org.gnome.Ptyxis.desktop
+
+[Icons]
+Theme=Noir-Gently-White-Blue-Dark-Icons
+
+[KDE]
+AnimationDurationFactor=0.5
+LookAndFeelPackage=org.fedoraproject.fedoradark.desktop
+contrast=4
+frameContrast=0.2
+
+[KFileDialog Settings]
+Allow Expansion=false
+Automatically select filename extension=true
+Breadcrumb Navigation=true
+Decoration position=2
+Show Full Path=false
+Show Inline Previews=true
+Show Preview=false
+Show Speedbar=true
+Show hidden files=false
+Sort by=Name
+Sort directories first=true
+Sort hidden files last=false
+Sort reversed=false
+Speedbar Width=140
+View Style=DetailTree
+
+[WM]
+activeBackground=39,44,49
+activeBlend=252,252,252
+activeForeground=252,252,252
+inactiveBackground=32,36,40
+inactiveBlend=161,169,177
+inactiveForeground=161,169,177
+__EOF_CFG__
+
+  write_file '$HOME_PLACEHOLDER/.config/kglobalshortcutsrc' <<'__EOF_CFG__'
+[ActivityManager]
+_k_friendly_name=Activity Manager
+switch-to-activity-f23c98a1-0207-4367-9983-5dbb8d1a0268=none,none,Switch to activity "Default"
+
+[KDE Keyboard Layout Switcher]
+Switch keyboard layout to English (US)=none,none,Switch keyboard layout to English (US)
+Switch keyboard layout to Spanish=none,none,Switch keyboard layout to Spanish
+Switch to Last-Used Keyboard Layout=Meta+Alt+L,Meta+Alt+L,Switch to Last-Used Keyboard Layout
+Switch to Next Keyboard Layout=Meta+Space,Meta+Alt+K,Switch to Next Keyboard Layout
+_k_friendly_name=Keyboard Layout Switcher
+
+[kmix]
+_k_friendly_name=Audio Volume
+decrease_microphone_volume=Microphone Volume Down,Microphone Volume Down,Decrease Microphone Volume
+decrease_volume=Volume Down,Volume Down,Decrease Volume
+decrease_volume_small=Shift+Volume Down,Shift+Volume Down,Decrease Volume by 1%
+increase_microphone_volume=Microphone Volume Up,Microphone Volume Up,Increase Microphone Volume
+increase_volume=Volume Up,Volume Up,Increase Volume
+increase_volume_small=Shift+Volume Up,Shift+Volume Up,Increase Volume by 1%
+mic_mute=Microphone Mute\tMeta+Volume Mute,Microphone Mute\tMeta+Volume Mute,Mute Microphone
+mute=Volume Mute,Volume Mute,Mute
+push_to_talk=none,none,Push to talk
+
+[ksmserver]
+Halt Without Confirmation=none,none,Shut Down Without Confirmation
+Lock Session=Screensaver\tCtrl+Launch (2),Screensaver\tMeta+L,Lock Session
+Log Out=Ctrl+Alt+Del,Ctrl+Alt+Del,Show Logout Screen
+Log Out Without Confirmation=none,none,Log Out Without Confirmation
+LogOut=none,none,Log Out
+Reboot=none,none,Reboot
+Reboot Without Confirmation=none,none,Reboot Without Confirmation
+Shut Down=none,none,Shut Down
+_k_friendly_name=Session Management
+
+[kwin]
+Activate Window Demanding Attention=Meta+Ctrl+A,Meta+Ctrl+A,Activate Window Demanding Attention
+Cycle Overview=none,none,Cycle through Overview and Grid View
+Cycle Overview Opposite=none,none,Cycle through Grid View and Overview
+Decrease Opacity=none,none,Decrease Opacity of Active Window by 5%
+Edit Tiles=Meta+T,Meta+T,Toggle Tiles Editor
+Expose=Ctrl+F9\tMeta+F9,Ctrl+F9\tMeta+F9,Toggle Present Windows (Current desktop)
+ExposeAll=Launch (C)\tCtrl+F10\tMeta+F10,Launch (C)\tCtrl+F10\tMeta+F10,Toggle Present Windows (All desktops)
+ExposeClass=Ctrl+F7\tMeta+F7,Ctrl+F7\tMeta+F7,Toggle Present Windows (Window class)
+ExposeClassCurrentDesktop=none,none,Toggle Present Windows (Window class on current desktop)
+Grid View=Meta+G,Meta+G,Toggle Grid View
+Increase Opacity=none,none,Increase Opacity of Active Window by 5%
+Kill Window=Meta+Ctrl+Esc,Meta+Ctrl+Esc,Kill Window
+Move Tablet to Next LogicalOutput=none,none,Move the tablet to the next output
+MoveMouseToCenter=Meta+F6,Meta+F6,Center Pointer in Screen
+MoveMouseToFocus=Meta+F5,Meta+F5,Center Pointer in Focused Window
+MoveZoomDown=none,none,Move Zoomed Area Downwards
+MoveZoomLeft=none,none,Move Zoomed Area to Left
+MoveZoomRight=none,none,Move Zoomed Area to Right
+MoveZoomUp=none,none,Move Zoomed Area Upwards
+Overview=Meta+W,Meta+W,Toggle Overview
+Setup Window Shortcut=none,none,Setup Window Shortcut
+Show Desktop=Meta+D,Meta+D,Peek at Desktop
+Switch One Desktop Down=Meta+Ctrl+Down,Meta+Ctrl+Down,Switch One Desktop Down
+Switch One Desktop Up=Meta+Ctrl+Up,Meta+Ctrl+Up,Switch One Desktop Up
+Switch One Desktop to the Left=Meta+Ctrl+Left,Meta+Ctrl+Left,Switch One Desktop to the Left
+Switch One Desktop to the Right=Meta+Ctrl+Right,Meta+Ctrl+Right,Switch One Desktop to the Right
+Switch Window Down=Meta+Alt+Down,Meta+Alt+Down,Switch to Window Below
+Switch Window Left=Meta+Alt+Left,Meta+Alt+Left,Switch to Window to the Left
+Switch Window Right=Meta+Alt+Right,Meta+Alt+Right,Switch to Window to the Right
+Switch Window Up=Meta+Alt+Up,Meta+Alt+Up,Switch to Window Above
+Switch to Desktop 1=Ctrl+F1\tMeta+F1,Ctrl+F1\tMeta+F1,Switch to Desktop 1
+Switch to Desktop 10=none,none,Switch to Desktop 10
+Switch to Desktop 11=none,none,Switch to Desktop 11
+Switch to Desktop 12=none,none,Switch to Desktop 12
+Switch to Desktop 13=none,none,Switch to Desktop 13
+Switch to Desktop 14=none,none,Switch to Desktop 14
+Switch to Desktop 15=none,none,Switch to Desktop 15
+Switch to Desktop 16=none,none,Switch to Desktop 16
+Switch to Desktop 17=none,none,Switch to Desktop 17
+Switch to Desktop 18=none,none,Switch to Desktop 18
+Switch to Desktop 19=none,none,Switch to Desktop 19
+Switch to Desktop 2=Ctrl+F2\tMeta+F2,Ctrl+F2\tMeta+F2,Switch to Desktop 2
+Switch to Desktop 20=none,none,Switch to Desktop 20
+Switch to Desktop 21=none,none,Switch to Desktop 21
+Switch to Desktop 22=none,none,Switch to Desktop 22
+Switch to Desktop 23=none,none,Switch to Desktop 23
+Switch to Desktop 24=none,none,Switch to Desktop 24
+Switch to Desktop 25=none,none,Switch to Desktop 25
+Switch to Desktop 3=Ctrl+F3\tMeta+F3,Ctrl+F3\tMeta+F3,Switch to Desktop 3
+Switch to Desktop 4=Ctrl+F4\tMeta+F4,Ctrl+F4\tMeta+F4,Switch to Desktop 4
+Switch to Desktop 5=none,none,Switch to Desktop 5
+Switch to Desktop 6=none,none,Switch to Desktop 6
+Switch to Desktop 7=none,none,Switch to Desktop 7
+Switch to Desktop 8=none,none,Switch to Desktop 8
+Switch to Desktop 9=none,none,Switch to Desktop 9
+Switch to Next Desktop=none,none,Switch to Next Desktop
+Switch to Next Screen=none,none,Switch to Next Screen
+Switch to Previous Desktop=none,none,Switch to Previous Desktop
+Switch to Previous Screen=none,none,Switch to Previous Screen
+Switch to Screen 0=none,none,Switch to Screen 0
+Switch to Screen 1=none,none,Switch to Screen 1
+Switch to Screen 2=none,none,Switch to Screen 2
+Switch to Screen 3=none,none,Switch to Screen 3
+Switch to Screen 4=none,none,Switch to Screen 4
+Switch to Screen 5=none,none,Switch to Screen 5
+Switch to Screen 6=none,none,Switch to Screen 6
+Switch to Screen 7=none,none,Switch to Screen 7
+Switch to Screen Above=none,none,Switch to Screen Above
+Switch to Screen Below=none,none,Switch to Screen Below
+Switch to Screen to the Left=none,none,Switch to Screen to the Left
+Switch to Screen to the Right=none,none,Switch to Screen to the Right
+Toggle Night Color=none,none,Suspend/Resume Night Light
+Toggle Show Compositing=none,none,Toggle “Show Compositing” effect
+Toggle Window Raise/Lower=none,none,Toggle Window Raise/Lower
+ToggleMouseClick=Meta+*,Meta+*,Toggle Mouse Click Animation
+Walk Through Windows=Alt+Tab\tMeta+Tab,Alt+Tab\tMeta+Tab,Walk Through Windows
+Walk Through Windows (Reverse)=Alt+Shift+Tab\tMeta+Shift+Tab,Alt+Shift+Tab\tMeta+Shift+Tab,Walk Through Windows (Reverse)
+Walk Through Windows Alternative=none,none,Walk Through Windows Alternative
+Walk Through Windows Alternative (Reverse)=none,none,Walk Through Windows Alternative (Reverse)
+Walk Through Windows of Current Application=Alt+`\tMeta+`,Alt+`\tMeta+`,Walk Through Windows of Current Application
+Walk Through Windows of Current Application (Reverse)=Alt+~\tMeta+~,Alt+~\tMeta+~,Walk Through Windows of Current Application (Reverse)
+Walk Through Windows of Current Application Alternative=none,none,Walk Through Windows of Current Application Alternative
+Walk Through Windows of Current Application Alternative (Reverse)=none,none,Walk Through Windows of Current Application Alternative (Reverse)
+Window Above Other Windows=none,none,Keep Window Above Others
+Window Below Other Windows=none,none,Keep Window Below Others
+Window Close=Alt+F4,Alt+F4,Close Window
+Window Custom Quick Tile Bottom=none,none,Custom Quick Tile Window to the Bottom
+Window Custom Quick Tile Left=none,none,Custom Quick Tile Window to the Left
+Window Custom Quick Tile Right=none,none,Custom Quick Tile Window to the Right
+Window Custom Quick Tile Top=none,none,Custom Quick Tile Window to the Top
+Window Fullscreen=none,none,Make Window Fullscreen
+Window Grow Horizontal=none,none,Expand Window Horizontally
+Window Grow Vertical=none,none,Expand Window Vertically
+Window Lower=none,none,Lower Window
+Window Maximize=Meta+PgUp,Meta+PgUp,Maximize Window
+Window Maximize Horizontal=none,none,Maximize Window Horizontally
+Window Maximize Vertical=none,none,Maximize Window Vertically
+Window Minimize=Meta+PgDown,Meta+PgDown,Minimize Window
+Window Move=none,none,Move Window
+Window Move Center=none,none,Move Window to the Center
+Window No Border=none,none,Toggle Window Titlebar and Frame
+Window On All Desktops=none,none,Keep Window on All Desktops
+Window One Desktop Down=Meta+Ctrl+Shift+Down,Meta+Ctrl+Shift+Down,Window One Desktop Down
+Window One Desktop Up=Meta+Ctrl+Shift+Up,Meta+Ctrl+Shift+Up,Window One Desktop Up
+Window One Desktop to the Left=Meta+Ctrl+Shift+Left,Meta+Ctrl+Shift+Left,Window One Desktop to the Left
+Window One Desktop to the Right=Meta+Ctrl+Shift+Right,Meta+Ctrl+Shift+Right,Window One Desktop to the Right
+Window One Screen Down=none,none,Move Window One Screen Down
+Window One Screen Up=none,none,Move Window One Screen Up
+Window One Screen to the Left=none,none,Move Window One Screen to the Left
+Window One Screen to the Right=none,none,Move Window One Screen to the Right
+Window Operations Menu=Alt+F3,Alt+F3,Window Menu
+Window Pack Down=none,none,Move Window Down
+Window Pack Left=none,none,Move Window Left
+Window Pack Right=none,none,Move Window Right
+Window Pack Up=none,none,Move Window Up
+Window Quick Tile Bottom=Meta+Down,Meta+Down,Quick Tile Window to the Bottom
+Window Quick Tile Bottom Left=none,none,Quick Tile Window to the Bottom Left
+Window Quick Tile Bottom Right=none,none,Quick Tile Window to the Bottom Right
+Window Quick Tile Left=Meta+Left,Meta+Left,Quick Tile Window to the Left
+Window Quick Tile Right=Meta+Right,Meta+Right,Quick Tile Window to the Right
+Window Quick Tile Top=Meta+Up,Meta+Up,Quick Tile Window to the Top
+Window Quick Tile Top Left=none,none,Quick Tile Window to the Top Left
+Window Quick Tile Top Right=none,none,Quick Tile Window to the Top Right
+Window Raise=none,none,Raise Window
+Window Resize=none,none,Resize Window
+Window Restore=Meta+Backspace,Meta+Backspace,Restore Window
+Window Shrink Horizontal=none,none,Shrink Window Horizontally
+Window Shrink Vertical=none,none,Shrink Window Vertically
+Window to Desktop 1=none,none,Window to Desktop 1
+Window to Desktop 10=none,none,Window to Desktop 10
+Window to Desktop 11=none,none,Window to Desktop 11
+Window to Desktop 12=none,none,Window to Desktop 12
+Window to Desktop 13=none,none,Window to Desktop 13
+Window to Desktop 14=none,none,Window to Desktop 14
+Window to Desktop 15=none,none,Window to Desktop 15
+Window to Desktop 16=none,none,Window to Desktop 16
+Window to Desktop 17=none,none,Window to Desktop 17
+Window to Desktop 18=none,none,Window to Desktop 18
+Window to Desktop 19=none,none,Window to Desktop 19
+Window to Desktop 2=none,none,Window to Desktop 2
+Window to Desktop 20=none,none,Window to Desktop 20
+Window to Desktop 21=none,none,Window to Desktop 21
+Window to Desktop 22=none,none,Window to Desktop 22
+Window to Desktop 23=none,none,Window to Desktop 23
+Window to Desktop 24=none,none,Window to Desktop 24
+Window to Desktop 25=none,none,Window to Desktop 25
+Window to Desktop 3=none,none,Window to Desktop 3
+Window to Desktop 4=none,none,Window to Desktop 4
+Window to Desktop 5=none,none,Window to Desktop 5
+Window to Desktop 6=none,none,Window to Desktop 6
+Window to Desktop 7=none,none,Window to Desktop 7
+Window to Desktop 8=none,none,Window to Desktop 8
+Window to Desktop 9=none,none,Window to Desktop 9
+Window to Next Desktop=none,none,Window to Next Desktop
+Window to Next Screen=Meta+Shift+Right,Meta+Shift+Right,Move Window to Next Screen
+Window to Previous Desktop=none,none,Window to Previous Desktop
+Window to Previous Screen=Meta+Shift+Left,Meta+Shift+Left,Move Window to Previous Screen
+Window to Screen 0=none,none,Move Window to Screen 0
+Window to Screen 1=none,none,Move Window to Screen 1
+Window to Screen 2=none,none,Move Window to Screen 2
+Window to Screen 3=none,none,Move Window to Screen 3
+Window to Screen 4=none,none,Move Window to Screen 4
+Window to Screen 5=none,none,Move Window to Screen 5
+Window to Screen 6=none,none,Move Window to Screen 6
+Window to Screen 7=none,none,Move Window to Screen 7
+_k_friendly_name=KWin
+disableInputCapture=Meta+Shift+Esc,Meta+Shift+Esc,Disable Active Input Capture
+view_actual_size=Meta+0,Meta+0,Zoom to Actual Size
+view_zoom_in=Meta++\tMeta+=,Meta++\tMeta+=,Zoom In
+view_zoom_out=Meta+-,Meta+-,Zoom Out
+
+[kwin][$InverseAction]
+Cycle Overview=Cycle Overview Opposite
+Decrease Opacity=Increase Opacity
+MoveZoomLeft=MoveZoomRight
+MoveZoomUp=MoveZoomDown
+Switch One Desktop Down=Switch One Desktop Up
+Switch One Desktop to the Left=Switch One Desktop to the Right
+Switch Window Down=Switch Window Up
+Switch Window Left=Switch Window Right
+Switch to Next Desktop=Switch to Previous Desktop
+Switch to Previous Screen=Switch to Next Screen
+Switch to Screen Above=Switch to Screen Below
+Switch to Screen to the Left=Switch to Screen to the Right
+Walk Through Windows (Reverse)=Walk Through Windows
+Walk Through Windows Alternative=Walk Through Windows Alternative (Reverse)
+Walk Through Windows of Current Application=Walk Through Windows of Current Application (Reverse)
+Walk Through Windows of Current Application Alternative=Walk Through Windows of Current Application Alternative (Reverse)
+Window Grow Vertical=Window Shrink Vertical
+Window One Desktop Up=Window One Desktop Down
+Window One Desktop to the Right=Window One Desktop to the Left
+Window One Screen Up=Window One Screen Down
+Window One Screen to the Left=Window One Screen to the Right
+Window Pack Down=Window Pack Up
+Window Pack Left=Window Pack Right
+Window Raise=Window Lower
+Window Shrink Horizontal=Window Grow Horizontal
+Window to Next Desktop=Window to Previous Desktop
+Window to Next Screen=Window to Previous Screen
+view_zoom_out=view_zoom_in
+
+[mediacontrol]
+_k_friendly_name=Media Controller
+mediavolumedown=none,none,Media volume down
+mediavolumeup=none,none,Media volume up
+nextmedia=Media Next,Media Next,Media playback next
+pausemedia=Media Pause,Media Pause,Pause media playback
+playmedia=none,none,Play media playback
+playpausemedia=Media Play,Media Play,Play/Pause media playback
+previousmedia=Media Previous,Media Previous,Media playback previous
+seekbackwardmedia=Media Rewind,Media Rewind,Media playback seek backward 5s
+seekbackwardmedialong=none,none,Media playback seek backward 30s
+seekforwardmedia=Media Fast Forward,Media Fast Forward,Media playback seek forward 5s
+seekforwardmedialong=none,none,Media playback seek forward 30s
+stopmedia=Media Stop,Media Stop,Stop media playback
+
+[org_kde_powerdevil]
+Decrease Keyboard Brightness=Keyboard Brightness Down,Keyboard Brightness Down,Decrease Keyboard Brightness
+Decrease Screen Brightness=Monitor Brightness Down,Monitor Brightness Down,Decrease Screen Brightness
+Decrease Screen Brightness Small=Shift+Monitor Brightness Down,Shift+Monitor Brightness Down,Decrease Screen Brightness by 1%
+Hibernate=Hibernate,Hibernate,Hibernate
+Increase Keyboard Brightness=Keyboard Brightness Up,Keyboard Brightness Up,Increase Keyboard Brightness
+Increase Screen Brightness=Monitor Brightness Up,Monitor Brightness Up,Increase Screen Brightness
+Increase Screen Brightness Small=Shift+Monitor Brightness Up,Shift+Monitor Brightness Up,Increase Screen Brightness by 1%
+PowerDown=Power Down,Power Down,Power Down
+PowerOff=Power Off,Power Off,Power Off
+Sleep=Sleep,Sleep,Suspend
+Toggle Keyboard Backlight=Keyboard Light On/Off,Keyboard Light On/Off,Toggle Keyboard Backlight
+Turn Off Screen=none,none,Turn Off Screen
+_k_friendly_name=Power Management
+powerProfile=Battery\tMeta+B,Battery\tMeta+B,Switch Power Profile
+
+[plasmashell]
+Slideshow Wallpaper Next Image=none,none,Next Wallpaper Image
+_k_friendly_name=plasmashell
+activate application launcher=Meta\tAlt+F1,Meta\tAlt+F1,Activate Application Launcher
+activate next task manager entry=Meta+Ctrl+PgDown,Meta+Ctrl+PgDown,Activate Next Task Manager Entry
+activate previous task manager entry=Meta+Ctrl+PgUp,Meta+Ctrl+PgUp,Activate Previous Task Manager Entry
+activate task manager entry 1=Meta+1,Meta+1,Activate Task Manager Entry 1
+activate task manager entry 10=none,none,Activate Task Manager Entry 10
+activate task manager entry 2=Meta+2,Meta+2,Activate Task Manager Entry 2
+activate task manager entry 3=Meta+3,Meta+3,Activate Task Manager Entry 3
+activate task manager entry 4=Meta+4,Meta+4,Activate Task Manager Entry 4
+activate task manager entry 5=Meta+5,Meta+5,Activate Task Manager Entry 5
+activate task manager entry 6=Meta+6,Meta+6,Activate Task Manager Entry 6
+activate task manager entry 7=Meta+7,Meta+7,Activate Task Manager Entry 7
+activate task manager entry 8=Meta+8,Meta+8,Activate Task Manager Entry 8
+activate task manager entry 9=Meta+9,Meta+9,Activate Task Manager Entry 9
+clear history=none,none,Clear Notification History
+clear-history=none,none,Clear Clipboard History
+clipboard_action=none,none,Toggle Automatic Popping Up of Action Menu
+cycle-panels=Meta+Alt+P,Meta+Alt+P,Move keyboard focus between panels
+cycleNextAction=none,none,Next History Item
+cyclePrevAction=none,none,Previous History Item
+edit_clipboard=none,none,Edit Contents…
+manage activities=Meta+Q,Meta+Q,Show Activity Switcher
+move active task to left=Meta+Ctrl+Shift+PgUp,Meta+Ctrl+Shift+PgUp,Move Active Task Manager Entry Backward
+move active task to right=Meta+Ctrl+Shift+PgDown,Meta+Ctrl+Shift+PgDown,Move Active Task Manager Entry Forward
+next activity=Meta+A,none,Walk through activities
+previous activity=Meta+Shift+A,none,Walk through activities (Reverse)
+repeat_action=none,none,Manually Invoke Action on Current Clipboard
+show dashboard=Ctrl+F12,Ctrl+F12,Show Desktop
+show-barcode=none,none,Show Barcode…
+show-on-mouse-pos=Meta+V,Meta+V,Show Clipboard Items at Mouse Position
+switch to next activity=none,none,Switch to Next Activity
+switch to previous activity=none,none,Switch to Previous Activity
+toggle do not disturb=none,none,Toggle do not disturb
+__EOF_CFG__
+
+  write_file '$HOME_PLACEHOLDER/.config/kxkbrc' <<'__EOF_CFG__'
+[Layout]
+DisplayNames=,
+LayoutList=us,es
+Use=true
+VariantList=,
+__EOF_CFG__
+
+  write_file '$HOME_PLACEHOLDER/.config/kcminputrc' <<'__EOF_CFG__'
+[Libinput][1267][12826][ELAN0788:00 04F3:321A Touchpad]
+NaturalScroll=false
+PointerAcceleration=0.350
+PointerAccelerationProfile=1
+ScrollFactor=0.5
+
+[Libinput][7511][64096][Beken 2.4G Wireless Device]
+PointerAccelerationProfile=1
+
+[Libinput][7511][64097][Beken USB Gaming Mouse]
+PointerAccelerationProfile=1
+__EOF_CFG__
+
+  write_file '$HOME_PLACEHOLDER/.config/konsolerc' <<'__EOF_CFG__'
+[General]
+ConfigVersion=1
+
+[MainWindow]
+MenuBar=Disabled
+
+[UiSettings]
+ColorScheme=
+__EOF_CFG__
+
+  write_file '$HOME_PLACEHOLDER/.config/ksplashrc' <<'__EOF_CFG__'
+[KSplash]
+Theme=Fedora-Minimalistic
+__EOF_CFG__
+
+  write_file '$HOME_PLACEHOLDER/.config/katerc' <<'__EOF_CFG__'
+[General]
+Days Meta Infos=30
+PinnedDocuments=
+Save Meta Infos=true
+Show Full Path in Title=false
+Show Menu Bar=true
+Show Status Bar=true
+Show Tab Bar=true
+Show Url Nav Bar=true
+
+[MainWindow]
+1920x1080 screen: Height=1006
+1920x1080 screen: Width=960
+1920x1080 screen: Window-Maximized=true
+2 screens: Window-Maximized=true
+
+[filetree]
+editShade=30,78,103
+listMode=false
+middleClickToClose=false
+shadingEnabled=true
+showCloseButton=false
+showFullPathOnRoots=false
+showToolbar=true
+sortRole=0
+viewShade=77,46,91
+__EOF_CFG__
+
+  write_file '$HOME_PLACEHOLDER/.config/gtk-3.0/settings.ini' <<'__EOF_CFG__'
+[Settings]
+gtk-application-prefer-dark-theme=true
+gtk-button-images=true
+gtk-cursor-blink=true
+gtk-cursor-blink-time=1000
+gtk-cursor-theme-name=breeze_cursors
+gtk-cursor-theme-size=24
+gtk-decoration-layout=icon:minimize,maximize,close
+gtk-enable-animations=true
+gtk-font-name=Noto Sans,  10
+gtk-icon-theme-name=Noir-Gently-White-Blue-Dark-Icons
+gtk-menu-images=true
+gtk-modules=colorreload-gtk-module:window-decorations-gtk-module
+gtk-primary-button-warps-slider=true
+gtk-sound-theme-name=ocean
+gtk-theme-name=Breeze
+gtk-toolbar-style=3
+gtk-xft-dpi=98304
+__EOF_CFG__
+
+  write_file '$HOME_PLACEHOLDER/.config/gtk-4.0/settings.ini' <<'__EOF_CFG__'
+[Settings]
+gtk-application-prefer-dark-theme=true
+gtk-cursor-blink=true
+gtk-cursor-blink-time=1000
+gtk-cursor-theme-name=breeze_cursors
+gtk-cursor-theme-size=24
+gtk-decoration-layout=icon:minimize,maximize,close
+gtk-enable-animations=true
+gtk-font-name=Noto Sans,  10
+gtk-icon-theme-name=Noir-Gently-White-Blue-Dark-Icons
+gtk-primary-button-warps-slider=true
+gtk-sound-theme-name=ocean
+gtk-xft-dpi=98304
+__EOF_CFG__
+
+  write_file '$HOME_PLACEHOLDER/.config/kwinrc' <<'__EOF_CFG__'
+[Desktops]
+Id_1=a90980b5-a195-4fef-906d-6c2764f7ab3e
+Id_2=38258093-837d-4770-9cae-7cd80cd07110
+Name_1=Main
+Name_2=Dev
+Number=2
+Rows=1
+
+[Effect-better-blur-dx]
+BlurDecorations=true
+BlurDocks=true
+BlurMatching=false
+BlurMenus=true
+BlurNonMatching=true
+BlurStrength=14
+Brightness=175
+NoiseStrength=10
+RefractionStrength=7
+
+[Plugins]
+better_blur_dxEnabled=true
+blurEnabled=false
+kwin6_effect_glitchEnabled=true
+mouseclickEnabled=true
+scaleEnabled=false
+translucencyEnabled=true
+virtualdesktopsonlyonprimaryEnabled=true
+
+[TabBox]
+DelayTime=40
+HighlightWindows=false
+
+[Windows]
+RollOverDesktops=true
+
+[org.kde.kdecoration2]
+library=org.kde.kwin.aurorae.v2
+theme=__aurorae__svg__Utterly-Round-Dark
+__EOF_CFG__
+
+  write_file '$HOME_PLACEHOLDER/.config/plasmashellrc' <<'__EOF_CFG__'
+[PIMEventsPlugin]
+calendars=8
+
+[PlasmaViews][Panel 117]
+floating=1
+panelLengthMode=1
+panelOpacity=2
+panelVisibility=0
+shell=org.kde.plasma.desktop
+
+[PlasmaViews][Panel 117][Defaults]
+maxLength=234
+minLength=98
+thickness=48
+
+[PlasmaViews][Panel 117][Horizontal1920]
+maxLength=234
+minLength=98
+
+[PlasmaViews][Panel 2]
+floating=1
+panelLengthMode=2
+panelOpacity=2
+panelVisibility=0
+shell=org.kde.plasma.desktop
+
+[PlasmaViews][Panel 2][Defaults]
+thickness=42
+
+__EOF_CFG__
+
+  write_file '$HOME_PLACEHOLDER/.config/plasma-org.kde.plasma.desktop-appletsrc' <<'__EOF_CFG__'
+[ActionPlugins][0]
+RightButton;NoModifier=org.kde.contextmenu
+
+[ActionPlugins][1]
+RightButton;NoModifier=org.kde.contextmenu
+
+[Containments][1]
+ItemGeometries-1920x1080=Applet-129:128,48,208,240,0;Applet-78:784,144,656,160,0;
+ItemGeometriesHorizontal=Applet-129:128,48,208,240,0;Applet-78:784,144,656,160,0;
+activityId=__ACTIVITY_ID__
+formfactor=0
+immutability=1
+lastScreen=0
+location=0
+plugin=org.kde.plasma.folder
+wallpaperplugin=org.kde.image
+
+[Containments][1][Applets][78]
+immutability=1
+plugin=com.github.prayag2.modernclock
+
+[Containments][1][Applets][78][Configuration][Appearance]
+date_font_size=20
+day_font_size=74
+
+[Containments][1][Applets][78][Configuration][ConfigDialog]
+DialogHeight=630
+DialogWidth=810
+
+[Containments][1][ConfigDialog]
+DialogHeight=1010
+DialogWidth=1920
+
+[Containments][1][Wallpaper][org.kde.image][General]
+SlidePaths=/usr/share/wallpapers/
+
+[Containments][117]
+activityId=
+formfactor=2
+immutability=1
+lastScreen=0
+location=4
+plugin=org.kde.panel
+wallpaperplugin=org.kde.image
+
+[Containments][117][Applets][118]
+immutability=1
+plugin=org.kde.plasma.kickerdash
+
+[Containments][117][Applets][118][Configuration][ConfigDialog]
+DialogHeight=630
+DialogWidth=810
+
+[Containments][117][Applets][118][Configuration][General]
+favoritesPortedToKAstats=true
+icon=start-here
+
+[Containments][117][Applets][119]
+immutability=1
+plugin=org.kde.plasma.icon
+
+[Containments][117][Applets][119][Configuration]
+url=file:///usr/share/applications/google-chrome.desktop
+
+[Containments][117][Applets][122]
+immutability=1
+plugin=org.kde.plasma.icon
+
+[Containments][117][Applets][122][Configuration]
+url=file:///usr/share/applications/com.microsoft.VSCode.desktop
+
+[Containments][117][Applets][123]
+immutability=1
+plugin=org.kde.plasma.icon
+
+[Containments][117][Applets][123][Configuration]
+url=file:///var/lib/flatpak/exports/share/applications/org.telegram.desktop.desktop
+
+[Containments][117][Applets][124]
+immutability=1
+plugin=org.kde.plasma.icon
+
+[Containments][117][Applets][124][Configuration]
+url=file:///usr/share/applications/org.kde.dolphin.desktop
+
+[Containments][117][Applets][125]
+immutability=1
+plugin=org.kde.plasma.icon
+
+[Containments][117][Applets][125][Configuration]
+url=file:///usr/share/applications/discord.desktop
+
+[Containments][117][Applets][126]
+immutability=1
+plugin=org.kde.plasma.icon
+
+[Containments][117][Applets][126][Configuration]
+url=file:///usr/share/applications/org.gnome.Ptyxis.desktop
+
+[Containments][117][General]
+AppletOrder=118;119;122;123;124;125;126
+
+[Containments][2]
+activityId=
+formfactor=2
+immutability=1
+lastScreen=0
+location=3
+plugin=org.kde.panel
+wallpaperplugin=org.kde.image
+
+[Containments][2][Applets][112]
+immutability=1
+plugin=org.kde.plasma.systemmonitor.net
+
+[Containments][2][Applets][112][Configuration]
+CurrentPreset=org.kde.plasma.systemmonitor
+popupHeight=195
+popupWidth=204
+
+[Containments][2][Applets][112][Configuration][Appearance]
+chartFace=org.kde.ksysguard.linechart
+title=Network Speed
+
+[Containments][2][Applets][112][Configuration][SensorColors]
+network/all/download=48,128,170
+network/all/upload=170,90,48
+
+[Containments][2][Applets][112][Configuration][Sensors]
+highPrioritySensorIds=["network/all/download","network/all/upload"]
+
+[Containments][2][Applets][113]
+immutability=1
+plugin=org.kde.plasma.systemmonitor
+
+[Containments][2][Applets][113][Configuration]
+CurrentPreset=org.kde.plasma.systemmonitor
+popupHeight=195
+popupWidth=187
+
+[Containments][2][Applets][113][Configuration][Appearance]
+chartFace=org.kde.ksysguard.piechart
+
+[Containments][2][Applets][114]
+immutability=1
+plugin=org.kde.plasma.battery
+
+[Containments][2][Applets][114][Configuration]
+popupHeight=400
+popupWidth=560
+
+[Containments][2][Applets][127]
+immutability=1
+plugin=org.kde.plasma.bluetooth
+
+[Containments][2][Applets][127][Configuration]
+popupHeight=433
+popupWidth=432
+
+[Containments][2][Applets][24]
+immutability=1
+plugin=org.kde.plasma.showdesktop
+
+[Containments][2][Applets][30]
+immutability=1
+plugin=org.kde.plasma.digitalclock
+
+[Containments][2][Applets][30][Configuration]
+popupHeight=451
+popupWidth=810
+
+[Containments][2][Applets][30][Configuration][Appearance]
+displayTimezoneFormat=FullText
+enabledCalendarPlugins=pimevents
+showWeekNumbers=true
+
+[Containments][2][Applets][30][Configuration][ConfigDialog]
+DialogHeight=630
+DialogWidth=810
+
+[Containments][2][Applets][34]
+immutability=1
+plugin=luisbocanegra.panelspacer.extended
+
+[Containments][2][Applets][34][Configuration][ConfigDialog]
+DialogHeight=630
+DialogWidth=810
+
+[Containments][2][Applets][34][Configuration][General]
+screenWidth=1920
+
+[Containments][2][Applets][35]
+immutability=1
+plugin=luisbocanegra.panelspacer.extended
+
+[Containments][2][Applets][35][Configuration][General]
+screenWidth=1920
+
+[Containments][2][Applets][40]
+immutability=1
+plugin=AndromedaLauncher
+
+[Containments][2][Applets][43]
+immutability=1
+plugin=KdeControlStation
+
+[Containments][2][Applets][43][Configuration]
+popupHeight=419
+popupWidth=420
+
+[Containments][2][Applets][6]
+immutability=1
+plugin=org.kde.plasma.marginsseparator
+
+[Containments][2][Applets][80]
+immutability=1
+plugin=zayron.chaac.weather
+
+[Containments][2][Applets][81]
+immutability=1
+plugin=org.kde.plasma.networkmanagement
+
+[Containments][2][Applets][81][Configuration]
+popupHeight=400
+popupWidth=560
+
+[Containments][2][General]
+AppletOrder=40;6;35;30;34;114;112;113;43;24;80;81;127
+
+[Containments][25]
+ItemGeometries-1920x1080=
+ItemGeometriesHorizontal=
+activityId=__ACTIVITY_ID__
+formfactor=0
+immutability=1
+lastScreen=1
+location=0
+plugin=org.kde.plasma.folder
+wallpaperplugin=org.kde.image
+
+[Containments][25][ConfigDialog]
+DialogHeight=1047
+DialogWidth=1017
+
+[ScreenMapping]
+itemsOnDisabledScreens=
+screenMapping=
+__EOF_CFG__
+
+  if (( ! DRY )); then
+    # El escritorio se asigna a la actividad actual de este equipo.
+    local act f="$HOME/.config/plasma-org.kde.plasma.desktop-appletsrc"
+    act=$(awk -F= '/^\[activities\]/{a=1;next} /^\[/{a=0} a&&NF{print $1;exit}' "$HOME/.config/kactivitymanagerdrc" 2>/dev/null)
+    if [[ -n "$act" ]]; then sed -i "s/__ACTIVITY_ID__/$act/" "$f"; else sed -i '/^activityId=__ACTIVITY_ID__$/d' "$f"; fi
+    qdbus6 org.kde.KWin /KWin reconfigure >/dev/null 2>&1 || true
+    (( restart )) && { kstart plasmashell >/dev/null 2>&1 & disown; }
+  fi
+  log "Apariencia de KDE aplicada (cierra sesión para ver todo)"
+}
+
 GNOME_EXTENSIONS=( live-lockscreen@nick-redwill tiling-assistant@leleat-on-github clipboard-indicator@tudmotu.com blur-my-shell@aunetx just-perfection-desktop@just-perfection Vitals@CoreCoding.com )
 
 install_gnome_ext() {
@@ -2163,7 +3115,7 @@ install_gnome_ext() {
 
 sec_gnome() {
   section "GNOME: extensiones y apariencia"
-  have gnome-extensions || { warn "GNOME no detectado, se omite"; return; }
+  have gnome-shell || { warn "GNOME no detectado, se omite"; return; }
   for e in "${GNOME_EXTENSIONS[@]}"; do install_gnome_ext "$e"; done
   if (( DRY )); then echo "  [dry] dconf load (apariencia, atajos, extensiones)"; return; fi
   dconf load /org/gnome/desktop/interface/ <<'__EOF_DCONF__'
@@ -2351,7 +3303,7 @@ __EOF_DCONF__
   log "Apariencia de GNOME aplicada (cierra sesión para ver todo)"
 }
 
-sec_latex() {
+sec_latexfull() {
   section "LaTeX completo (texlive-scheme-full)"
   run sudo dnf -y install texlive-scheme-full latexmk
 }
@@ -2364,6 +3316,6 @@ main() {
     while true; do sudo -n true; sleep 60; kill -0 "$$" || exit; done 2>/dev/null &
   fi
   for s in "${SECTIONS[@]}"; do enabled "$s" && "sec_$s"; done
-  echo; log "¡Listo! Reinicia para aplicar todo (shell, grupo docker, extensiones)."
+  echo; log "¡Listo! Reinicia para aplicar todo (shell, grupo docker, temas)."
 }
 main

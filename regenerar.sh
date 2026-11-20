@@ -34,13 +34,26 @@ DNF_LIST=(
 FLATPAK_LIST=(
   cc.arduino.arduinoide com.getpostman.Postman com.jetbrains.IntelliJ-IDEA-Ultimate
   io.github.shiftey.Desktop md.obsidian.Obsidian org.gaphor.Gaphor org.gnome.Extensions
+  org.telegram.desktop
 )
 PIP_LIST=(ipython ipykernel numpy pandas matplotlib seaborn scipy scikit-learn ruff debugpy rich)
 NPM_LIST=(@anthropic-ai/claude-code @google/gemini-cli openclaw)
+LATEX_LIST=(texlive-scheme-medium latexmk)
+
+# KDE Plasma
+KDE_COPR_LIST=(infinality/kwin-effects-better-blur-dx)
+KDE_DNF_LIST=(kwin-effects-better-blur-dx)
+# Archivos de ~/.config que se copian tal cual
+KDE_RC=(kdeglobals kglobalshortcutsrc kxkbrc kcminputrc konsolerc ksplashrc katerc
+  gtk-3.0/settings.ini gtk-4.0/settings.ini)
+# Temas/widgets de la KDE Store (relativos a ~/.local/share) que se empaquetan
+KDE_ASSET_PATHS=(plasma/plasmoids plasma/look-and-feel aurorae/themes kwin/effects)
+# Widgets personales que no se incluyen
+KDE_EXCLUDE_PLASMOIDS=(pe.trazi.face)
 
 # ------------------------- Datos leídos del sistema --------------------------
 VSCODE=$(code --list-extensions 2>/dev/null | tr '\n' ' ')
-EXTS=$(gnome-extensions list --enabled --user 2>/dev/null | tr '\n' ' ')
+EXTS=$(gnome-extensions list --enabled --user 2>/dev/null | tr '\n' ' ' || true)
 NODEV=$(node --version 2>/dev/null || echo "--lts")
 DCONF_PATHS=(/org/gnome/desktop/interface/ /org/gnome/desktop/wm/ /org/gnome/desktop/peripherals/
   /org/gnome/mutter/ /org/gnome/settings-daemon/plugins/media-keys/ /org/gnome/shell/
@@ -63,17 +76,64 @@ dconf_clean() {
     { print }'
 }
 
+# Como embed, pero lee el contenido de stdin.
+embed_stdin() { # embed_stdin <destino> < contenido
+  printf "  write_file '%s' <<'__EOF_CFG__'\n" "$1"
+  sed "s|$H|\$HOME_PLACEHOLDER|g"
+  printf '__EOF_CFG__\n\n'
+}
+
+# Imprime un archivo INI sin las secciones indicadas.  ini_drop <archivo> 'A|B'
+ini_drop() {
+  awk -v names="$2" '/^\[/ { skip = ($0 ~ ("^[[](" names ")[]]")) } skip { next } { print }' "$1"
+}
+
+# Disposición de paneles/escritorio: sin rutas personales (fondo, iconos
+# copiados), sin widgets excluidos y con la actividad como marcador.
+appletsrc_clean() {
+  awk -v excl=" ${KDE_EXCLUDE_PLASMOIDS[*]} " '
+    NR == FNR {
+      if ($0 ~ /^\[/) sec = $0
+      if ($0 ~ /^plugin=/ && index(excl, " " substr($0, 8) " ")) bad[sec] = 1
+      next
+    }
+    /^\[/ { skip = 0; for (b in bad) if (index($0, b) == 1) skip = 1 }
+    skip { next }
+    /^(localPath|Image)=/ { next }
+    /^activityId=./ { print "activityId=__ACTIVITY_ID__"; next }
+    { print }' "$1" "$1"
+}
+
+# Empaqueta temas/widgets de ~/.local/share junto al script generado.
+kde_assets() { # kde_assets <tar.gz>
+  local share="$H/.local/share" icons paths=() p ex=()
+  icons=$(kreadconfig6 --file kdeglobals --group Icons --key Theme 2>/dev/null || true)
+  [[ -n "$icons" && -d "$share/icons/$icons" ]] && paths+=("icons/$icons")
+  for p in "${KDE_ASSET_PATHS[@]}"; do [[ -d "$share/$p" ]] && paths+=("$p"); done
+  for p in "${KDE_EXCLUDE_PLASMOIDS[@]}"; do ex+=(--exclude="plasma/plasmoids/$p"); done
+  (( ${#paths[@]} )) || return 0
+  tar -czf "$1" -C "$share" "${ex[@]}" "${paths[@]}"
+  echo "Generado $1 ($(du -h "$1" | cut -f1): ${paths[*]})" >&2
+}
+
+# Sección GNOME del script anterior, para no perderla al regenerar desde KDE.
+PREV_GNOME=""
+[[ -f "$OUT" ]] && PREV_GNOME=$(awk '/^GNOME_EXTENSIONS=\(/{f=1} f{print} f&&/Apariencia de GNOME aplicada/{g=1} g&&/^}$/{exit}' "$OUT" | sed "s/have gnome-extensions ||/have gnome-shell ||/")
+TMP_OUT=$(mktemp)
+trap 'rm -f "$TMP_OUT"' EXIT
+
 {
 cat <<'HEAD'
 #!/usr/bin/env bash
 # =============================================================================
 #  fedora-setup.sh — Entorno de desarrollo + configuración visual para Fedora
 HEAD
-echo "#  Generado el $(date +%F) desde $(. /etc/os-release; echo "$PRETTY_NAME"), $(gnome-shell --version 2>/dev/null)"
+echo "#  Generado el $(date +%F) desde $(. /etc/os-release; echo "$PRETTY_NAME")$(plasmashell --version 2>/dev/null | sed 's/^/, /')$(gnome-shell --version 2>/dev/null | sed 's/^/, /')"
 cat <<'HEAD'
 #
-#  Incluye: apps de desarrollo, kitty, zsh/oh-my-zsh/p10k/starship,
-#           extensiones y apariencia de GNOME, VS Code.
+#  Incluye: apps de desarrollo, kitty, zsh/oh-my-zsh/p10k/starship, VS Code,
+#           LaTeX (TeX Live medium), apariencia de KDE Plasma (temas,
+#           widgets, paneles, atajos) y de GNOME (extensiones, dconf).
 #  NO incluye: identidad de git, drivers (NVIDIA/firmware), herramientas de
 #           seguridad, fondos ni archivos personales.
 #
@@ -82,16 +142,18 @@ cat <<'HEAD'
 #    ./fedora-setup.sh --dry-run         # muestra lo que haría
 #    ./fedora-setup.sh --only dotfiles   # solo una sección
 #    ./fedora-setup.sh --skip gnome,dev
-#    ./fedora-setup.sh --with latex      # añade LaTeX completo (~5 GB)
+#    ./fedora-setup.sh --with latexfull  # añade LaTeX completo (~5 GB)
 #
-#  Secciones: system repos packages flatpak shell dotfiles dev vscode gnome
-#  Opcionales: latex
+#  Secciones: system repos packages flatpak shell dotfiles dev vscode latex kde gnome
+#  Opcionales: latexfull
+#  KDE: temas, iconos y widgets se leen de kde-assets.tar.gz (junto al script).
 #  No ejecutar como root: usa sudo cuando hace falta.
 # =============================================================================
 set -uo pipefail
 
-SECTIONS=(system repos packages flatpak shell dotfiles dev vscode gnome latex)
-OPTIONAL=",latex,"
+SECTIONS=(system repos packages flatpak shell dotfiles dev vscode latex kde gnome latexfull)
+OPTIONAL=",latexfull,"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ONLY="" SKIP="" WITH="" DRY=0
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -99,7 +161,7 @@ while [[ $# -gt 0 ]]; do
     --skip) SKIP="$2"; shift 2 ;;
     --with) WITH="$2"; shift 2 ;;
     --dry-run) DRY=1; shift ;;
-    -h|--help) sed -n '2,20p' "$0"; exit 0 ;;
+    -h|--help) sed -n '2,23p' "$0"; exit 0 ;;
     *) echo "Opción desconocida: $1"; exit 1 ;;
   esac
 done
@@ -247,6 +309,61 @@ sec_vscode() {
 }
 
 EOS
+echo "LATEX_PACKAGES=( ${LATEX_LIST[*]} )"
+cat <<'EOS'
+
+sec_latex() {
+  section "LaTeX (TeX Live medium + latexmk)"
+  run sudo dnf -y install --skip-unavailable "${LATEX_PACKAGES[@]}"
+}
+
+EOS
+echo "KDE_COPRS=( ${KDE_COPR_LIST[*]} )"
+echo "KDE_PACKAGES=( ${KDE_DNF_LIST[*]} )"
+cat <<'EOS'
+KDE_ASSETS="$SCRIPT_DIR/kde-assets.tar.gz"
+
+sec_kde() {
+  section "KDE Plasma: temas, widgets, paneles y atajos"
+  have plasmashell || { warn "KDE Plasma no detectado, se omite"; return; }
+  for c in "${KDE_COPRS[@]}"; do run sudo dnf -y copr enable "$c"; done
+  run sudo dnf -y install --skip-unavailable "${KDE_PACKAGES[@]}"
+  if [[ -f "$KDE_ASSETS" ]]; then
+    run mkdir -p "$HOME/.local/share"
+    run tar -xzf "$KDE_ASSETS" -C "$HOME/.local/share"
+  else
+    warn "No se encontró $KDE_ASSETS: temas, iconos y widgets no instalados"
+  fi
+  # plasmashell reescribe su configuración al salir: se detiene antes de escribir.
+  local restart=0
+  if (( ! DRY )) && pgrep -x plasmashell >/dev/null; then
+    kquitapp6 plasmashell >/dev/null 2>&1 || pkill -x plasmashell
+    restart=1
+  fi
+EOS
+for rc in "${KDE_RC[@]}"; do embed "\$HOME_PLACEHOLDER/.config/$rc" "$H/.config/$rc"; done
+f="$H/.config/kwinrc";         [[ -f "$f" ]] && ini_drop "$f" 'Tiling|Xwayland' | embed_stdin '$HOME_PLACEHOLDER/.config/kwinrc'
+f="$H/.config/plasmashellrc";  [[ -f "$f" ]] && ini_drop "$f" 'Updates' | embed_stdin '$HOME_PLACEHOLDER/.config/plasmashellrc'
+f="$H/.config/plasma-org.kde.plasma.desktop-appletsrc"
+[[ -f "$f" ]] && appletsrc_clean "$f" | embed_stdin '$HOME_PLACEHOLDER/.config/plasma-org.kde.plasma.desktop-appletsrc'
+cat <<'EOS'
+  if (( ! DRY )); then
+    # El escritorio se asigna a la actividad actual de este equipo.
+    local act f="$HOME/.config/plasma-org.kde.plasma.desktop-appletsrc"
+    act=$(awk -F= '/^\[activities\]/{a=1;next} /^\[/{a=0} a&&NF{print $1;exit}' "$HOME/.config/kactivitymanagerdrc" 2>/dev/null)
+    if [[ -n "$act" ]]; then sed -i "s/__ACTIVITY_ID__/$act/" "$f"; else sed -i '/^activityId=__ACTIVITY_ID__$/d' "$f"; fi
+    qdbus6 org.kde.KWin /KWin reconfigure >/dev/null 2>&1 || true
+    (( restart )) && { kstart plasmashell >/dev/null 2>&1 & disown; }
+  fi
+  log "Apariencia de KDE aplicada (cierra sesión para ver todo)"
+}
+
+EOS
+if [[ -n "$PREV_GNOME" && "${XDG_CURRENT_DESKTOP:-}" != *GNOME* ]]; then
+  # No estamos en GNOME: se conserva la sección GNOME del script anterior.
+  echo "$PREV_GNOME"
+  echo
+else
 echo "GNOME_EXTENSIONS=( $EXTS)"
 cat <<'EOS'
 
@@ -265,7 +382,7 @@ install_gnome_ext() {
 
 sec_gnome() {
   section "GNOME: extensiones y apariencia"
-  have gnome-extensions || { warn "GNOME no detectado, se omite"; return; }
+  have gnome-shell || { warn "GNOME no detectado, se omite"; return; }
   for e in "${GNOME_EXTENSIONS[@]}"; do install_gnome_ext "$e"; done
   if (( DRY )); then echo "  [dry] dconf load (apariencia, atajos, extensiones)"; return; fi
 EOS
@@ -281,7 +398,10 @@ cat <<'EOS'
   log "Apariencia de GNOME aplicada (cierra sesión para ver todo)"
 }
 
-sec_latex() {
+EOS
+fi
+cat <<'EOS'
+sec_latexfull() {
   section "LaTeX completo (texlive-scheme-full)"
   run sudo dnf -y install texlive-scheme-full latexmk
 }
@@ -294,10 +414,12 @@ main() {
     while true; do sudo -n true; sleep 60; kill -0 "$$" || exit; done 2>/dev/null &
   fi
   for s in "${SECTIONS[@]}"; do enabled "$s" && "sec_$s"; done
-  echo; log "¡Listo! Reinicia para aplicar todo (shell, grupo docker, extensiones)."
+  echo; log "¡Listo! Reinicia para aplicar todo (shell, grupo docker, temas)."
 }
 main
 EOS
-} > "$OUT"
+} > "$TMP_OUT"
+mv "$TMP_OUT" "$OUT"
 chmod +x "$OUT"
+kde_assets "$(dirname "$OUT")/kde-assets.tar.gz"
 echo "Generado $OUT ($(wc -l < "$OUT") líneas)"
